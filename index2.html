@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>학습 타이머</title>
+
+<style>
+.bg-demo-3 {
+  background-image: url('배경2.png');
+  background-size: cover;
+}
+
+body {
+  font-family: Arial;
+  text-align: center;
+  margin-top: 50px;
+}
+
+.timer-box {
+  background: rgba(255,255,255,0.85);
+  padding: 30px 50px;
+  margin: 20px auto;
+  border-radius: 16px;
+  width: fit-content;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+
+#timer {
+  font-size: 48px;
+}
+
+button {
+  padding: 8px 15px;
+  margin: 5px;
+}
+
+select {
+  padding: 5px;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+canvas {
+  background: rgba(255,255,255,0.85);
+  border-radius: 12px;
+  margin-top: 20px;
+}
+</style>
+</head>
+
+<body class="bg-demo-3">
+
+<h1>학습 타이머</h1>
+
+<label>과목 선택:</label>
+<select id="subject">
+  <option value="국어">국어</option>
+  <option value="수학">수학</option>
+  <option value="영어">영어</option>
+  <option value="과학">과학</option>
+</select>
+
+<div class="timer-box">
+  <div id="timer">00:00:00</div>
+
+  <button onclick="startTimer()">시작</button>
+  <button onclick="pauseTimer()">일시정지</button>
+  <button onclick="resetTimer()">초기화</button>
+</div>
+
+<!-- ✅ 날짜 선택 -->
+<h3>📅 날짜 선택</h3>
+<input type="date" id="datePicker">
+
+<h2>📊 공부 기록</h2>
+<ul id="recordList"></ul>
+
+<h2>🏆 총 공부 시간</h2>
+<div id="totalTime"></div>
+
+<h2>🥇 과목 랭킹</h2>
+<ul id="ranking"></ul>
+
+<button onclick="refresh()">그래프 반영</button>
+
+<canvas id="studyChart" width="400" height="250"></canvas>
+
+<script>
+let seconds = 0;
+let interval = null;
+let lastSavedSeconds = 0;
+let currentSubject = document.getElementById("subject").value;
+
+const colors = {
+  국어: "#6b93ff",
+  수학: "#2a6d40",
+  영어: "#6BCB77",
+  과학: "#FFA351"
+};
+
+function getToday() {
+  return new Date().toISOString().slice(0,10);
+}
+
+document.getElementById("datePicker").value = getToday();
+
+let records = JSON.parse(localStorage.getItem("studyRecords")) || {};
+
+function startTimer() {
+  if (interval) return;
+
+  interval = setInterval(() => {
+    seconds++;
+    updateDisplay();
+  }, 1000);
+}
+
+function pauseTimer() {
+  clearInterval(interval);
+  interval = null;
+  saveTime();
+}
+
+function resetTimer() {
+  saveTime();
+  seconds = 0;
+  lastSavedSeconds = 0;
+  updateDisplay();
+}
+
+function updateDisplay() {
+  let h = String(Math.floor(seconds/3600)).padStart(2,"0");
+  let m = String(Math.floor((seconds%3600)/60)).padStart(2,"0");
+  let s = String(seconds%60).padStart(2,"0");
+
+  document.getElementById("timer").innerText = `${h}:${m}:${s}`;
+}
+
+function saveTime() {
+  const subject = document.getElementById("subject").value;
+  const today = getToday();
+
+  if (subject !== currentSubject) {
+    lastSavedSeconds = 0;
+    currentSubject = subject;
+  }
+
+  const delta = seconds - lastSavedSeconds;
+  if (delta <= 0) return;
+
+  if (!records[today]) records[today] = {};
+  records[today][subject] = (records[today][subject] || 0) + delta;
+
+  lastSavedSeconds = seconds;
+
+  localStorage.setItem("studyRecords", JSON.stringify(records));
+}
+
+// 과목 변경
+document.getElementById("subject").addEventListener("change", () => {
+  saveTime();
+  seconds = 0;
+  lastSavedSeconds = 0;
+  updateDisplay();
+});
+
+// 새로고침
+function refresh() {
+  saveTime();
+  records = JSON.parse(localStorage.getItem("studyRecords")) || {};
+
+  showRecords();
+  showTotal();
+  showRanking();
+  drawChart();
+}
+
+// 기록 출력
+function showRecords() {
+  const list = document.getElementById("recordList");
+  list.innerHTML = "";
+
+  const date = document.getElementById("datePicker").value;
+  if (!records[date]) return;
+
+  for (let sub in records[date]) {
+    let min = Math.floor(records[date][sub]/60);
+    let li = document.createElement("li");
+    li.innerText = `${sub}: ${min}분`;
+    list.appendChild(li);
+  }
+}
+
+// 총 공부 시간
+function showTotal() {
+  const date = document.getElementById("datePicker").value;
+  let total = 0;
+
+  if (records[date]) {
+    for (let t of Object.values(records[date])) total += t;
+  }
+
+  document.getElementById("totalTime").innerText = Math.floor(total/60) + "분";
+}
+
+// 랭킹
+function showRanking() {
+  const list = document.getElementById("ranking");
+  list.innerHTML = "";
+
+  const date = document.getElementById("datePicker").value;
+  if (!records[date]) return;
+
+  let sorted = Object.entries(records[date])
+    .sort((a,b)=>b[1]-a[1]);
+
+  sorted.forEach(([sub,t],i)=>{
+    let li = document.createElement("li");
+    li.innerText = `${i+1}위 ${sub} (${Math.floor(t/60)}분)`;
+    list.appendChild(li);
+  });
+}
+
+// 원형 그래프
+function drawChart() {
+  const canvas = document.getElementById("studyChart");
+  const ctx = canvas.getContext("2d");
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const date = document.getElementById("datePicker").value;
+  if (!records[date]) {
+    ctx.fillText("데이터 없음",150,120);
+    return;
+  }
+
+  const data = records[date];
+  const total = Object.values(data).reduce((a,b)=>a+b,0);
+
+  let start = 0;
+
+  for (let sub in data) {
+    let angle = (data[sub]/total)*Math.PI*2;
+
+    ctx.beginPath();
+    ctx.moveTo(200,125);
+    ctx.arc(200,125,100,start,start+angle);
+    ctx.fillStyle = colors[sub];
+    ctx.fill();
+
+    start += angle;
+  }
+}
+
+// 날짜 변경 시 업데이트
+document.getElementById("datePicker").addEventListener("change", refresh);
+
+refresh();
+</script>
+
+</body>
+</html>
